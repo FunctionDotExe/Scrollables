@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Robotic Hand — Combined Scroll Sequence</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: auto; }
+
+  body {
+    background: #000;
+    color: #f5f5f7;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  section.copy {
+    min-height: 100vh;
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 24px;
+    gap: 16px;
+  }
+
+  section.copy h1 {
+    font-size: clamp(2.2rem, 6vw, 4.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  section.copy p {
+    font-size: clamp(1rem, 2.2vw, 1.35rem);
+    color: #a1a1a6;
+    max-width: 40ch;
+  }
+
+  .scroll-hint {
+    margin-top: 24px;
+    font-size: 0.85rem;
+    color: #6e6e73;
+    animation: hint-bob 2s ease-in-out infinite;
+  }
+
+  @keyframes hint-bob {
+    0%, 100% { transform: translateY(0); opacity: 0.6; }
+    50%      { transform: translateY(6px); opacity: 1; }
+  }
+
+  /* The pinned stage. ScrollTrigger pins this element while the
+     combined sequence plays straight through. */
+  #sequence {
+    position: relative;
+    height: 100vh;
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  #sequence canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* Loading fallback overlay */
+  #loader {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: opacity 0.5s ease;
+    z-index: 2;
+  }
+
+  #loader.done { opacity: 0; pointer-events: none; }
+
+  #loader .label {
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #a1a1a6;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #loader .bar {
+    width: min(220px, 50vw);
+    height: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  #loader .bar i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: #f5f5f7;
+    border-radius: 2px;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 0.2s ease;
+  }
+
+  /* Chapter captions revealed over the canvas as the sequence plays.
+     Opacity/translate are driven from scroll progress in JS. */
+  .seq-caption {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 24ch;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .seq-caption.cap-right { right: clamp(24px, 9vw, 140px); }
+  .seq-caption.cap-left  { left:  clamp(24px, 9vw, 140px); }
+
+  /* Fist fills the middle of the frame, so this caption sits in
+     the empty upper-left quadrant. */
+  #cap-grasp { top: 22%; }
+
+  /* Final chapter: the OK sign holds center-right, so this caption
+     sits in the empty upper-left quadrant. */
+  #cap-ok { top: 24%; }
+
+  .seq-caption h2 {
+    font-size: clamp(1.7rem, 3.6vw, 3rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
+  }
+
+  .seq-caption p {
+    margin-top: 12px;
+    font-size: clamp(0.95rem, 1.6vw, 1.15rem);
+    color: #e8e8e2;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
+  }
+
+  @media (max-width: 640px) {
+    .seq-caption,
+    .seq-caption.cap-left,
+    .seq-caption.cap-right {
+      top: auto;
+      bottom: 10%;
+      left: 24px;
+      right: 24px;
+      max-width: none;
+      transform: none;
+      text-align: center;
+    }
+  }
+
+  /* Static fallback if JS or GSAP never arrives */
+  #sequence noscript img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+</style>
+</head>
+<body>
+
+  <section class="copy">
+    <h1>Every part in its place.</h1>
+    <p>A robotic hand, exploded into its components &mdash; assembled and brought to life as you scroll.</p>
+    <div class="scroll-hint">&darr; scroll</div>
+  </section>
+
+  <section id="sequence" aria-label="Robotic hand assembling, gesturing, and signing OK">
+    <canvas id="sequence-canvas"></canvas>
+
+    <div class="seq-caption cap-left" id="cap-assemble">
+      <div class="seq-caption-inner">
+        <h2>246 precision parts.</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit &mdash; every linkage machined, every cable tensioned by hand.</p>
+      </div>
+    </div>
+
+    <div class="seq-caption cap-right" id="cap-point">
+      <div class="seq-caption-inner">
+        <h2>Wow. This actually works.</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit &mdash; scroll-driven storytelling, rendered right on the frame.</p>
+      </div>
+    </div>
+
+    <div class="seq-caption cap-right" id="cap-gesture">
+      <div class="seq-caption-inner">
+        <h2>Articulate. Literally.</h2>
+        <p>Sed do eiusmod tempor incididunt ut labore &mdash; twenty-seven degrees of freedom, one fluid motion.</p>
+      </div>
+    </div>
+
+    <div class="seq-caption cap-left" id="cap-grasp">
+      <div class="seq-caption-inner">
+        <h2>Built to hold on.</h2>
+        <p>Ut enim ad minim veniam, quis nostrud exercitation &mdash; grip calibrated from a feather to a fastball.</p>
+      </div>
+    </div>
+
+    <div class="seq-caption cap-left" id="cap-ok">
+      <div class="seq-caption-inner">
+        <h2>Everything checks out.</h2>
+        <p>Duis aute irure dolor in reprehenderit &mdash; final calibration signed off by the hand itself.</p>
+      </div>
+    </div>
+    <div id="loader" aria-hidden="true">
+      <div class="bar"><i id="loader-fill"></i></div>
+      <div class="label" id="loader-label">Loading 0%</div>
+    </div>
+    <noscript><img src="frames-hand-src/frame-001.jpg" alt="Exploded robotic hand"></noscript>
+  </section>
+
+  <section class="copy">
+    <h1>That&rsquo;s the technique.</h1>
+    <p>Five image sequences chained on one pinned canvas &mdash; they play as a single uninterrupted shot, with copy timed to the frame.</p>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"
+          integrity="sha384-g4NTh/Iv5PPU4xPyhEWqPcwtNXOvdaDI8LLnyYfyNZOjKJeYQyjzQ9X5275eBjpt"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"
+          integrity="sha384-Z3REaz79l2IaAZqJsSABtTbhjgOUYyV3p90XNnAPCSHg3EMTz1fouunq9WZRtj3d"
+          crossorigin="anonymous"></script>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* ============================================================
+       CONFIG — segments play back to back on one pinned canvas,
+       so the clips read as a single uninterrupted shot.
+       Frames are extracted straight from the original Veo mp4s
+       (no gif/jpg re-compression). The clips play back to back as
+       pure straight cuts — no blends, no synthetic frames. Each cut
+       was chosen by scanning the outgoing clip's tail against the
+       incoming clip's head (full untrimmed sources) for the frame
+       pair with the smallest pixel difference; every seam lands at
+       or near the clips' own frame-to-frame motion, so the cuts
+       read as one continuous shot:
+         hand[186]        → point[1]     (diff 1.3)
+         point[181]       → gesture[12]  (diff 2.2, at 7.54s — the
+                            clips only line up at the very end of
+                            the point clip, so it plays in full)
+         gesture[185]     → grasp[1]     (diff 2.4)
+         grasp[185]       → ok[2]        (diff 2.9)
+       ============================================================ */
+    var SEGMENTS = [
+      {
+        count: 186, // assembled hand at rest; 186→point[1] is the closest pair
+        path: function (i) {
+          return "frames-hand-src/frame-" + String(i + 1).padStart(3, "0") + ".jpg";
+        }
+      },
+      {
+        count: 181, // full clip: point, then travel to the gesture framing
+        path: function (i) {
+          return "frames-point-src/frame-" + String(i + 1).padStart(3, "0") + ".jpg";
+        }
+      },
+      {
+        count: 174, // gesture[12..185]: splay, ending where grasp[1] picks up
+        path: function (i) {
+          return "frames-gesture-src/frame-" + String(i + 12).padStart(3, "0") + ".jpg";
+        }
+      },
+      {
+        count: 185, // grasp[1..185]: grip to palm-down rest; 185→ok[2] is the closest pair
+        path: function (i) {
+          return "frames-grasp-src/frame-" + String(i + 1).padStart(3, "0") + ".jpg";
+        }
+      },
+      {
+        count: 169, // ok[2..170]: curl up into the OK sign, held to the end
+        path: function (i) {
+          return "frames-ok-src/frame-" + String(i + 2).padStart(3, "0") + ".jpg";
+        }
+      }
+    ];
+
+    var CONFIG = {
+      // Scroll pixels per frame of playback (24fps source).
+      pxPerUnit: 15,
+      // Caption fade edges as fractions of each clip's own length:
+      // rise in over [inStart, inEnd], drop out over [outStart, outEnd].
+      capIn:  [0.06, 0.22],
+      capOut: [0.82, 0.97],
+      scrub: 0.7,
+      maxDPR: 2
+    };
+
+    /* Chapter captions, one per segment, in order. fadeIn/fadeOut
+       windows are computed in initScroll(): each caption rises in
+       shortly after its clip starts, stays up while the clip keeps
+       playing, and drops out before the clip hands off to the next.
+       The video never freezes. The last caption never fades out. */
+    var CAPTIONS = [
+      { el: "#cap-assemble" },
+      { el: "#cap-point" },
+      { el: "#cap-gesture" },
+      { el: "#cap-grasp" },
+      { el: "#cap-ok" }
+    ];
+
+    /* Flatten segments into one global frame index. */
+    var FRAME_COUNT = 0;
+    var framePathFor = (function () {
+      var lookup = [];
+      SEGMENTS.forEach(function (seg) {
+        for (var i = 0; i < seg.count; i++) lookup.push(seg.path(i));
+        FRAME_COUNT += seg.count;
+      });
+      return function (i) { return lookup[i]; };
+    })();
+
+    var canvas = document.getElementById("sequence-canvas");
+    var ctx = canvas.getContext("2d");
+    var loader = document.getElementById("loader");
+    var loaderFill = document.getElementById("loader-fill");
+    var loaderLabel = document.getElementById("loader-label");
+    CAPTIONS.forEach(function (c) {
+      c.node = document.querySelector(c.el);
+      c.inner = c.node.querySelector(".seq-caption-inner");
+    });
+
+    var frames = new Array(FRAME_COUNT);
+    var frameLoaded = new Array(FRAME_COUNT).fill(false);
+    var loadedCount = 0;
+    var currentFrame = 0;
+    var renderQueued = false;
+
+    /* ============================================================
+       PRELOAD
+       ============================================================ */
+    function preload() {
+      for (var i = 0; i < FRAME_COUNT; i++) {
+        (function (index) {
+          var img = new Image();
+          img.decoding = "async";
+          img.onload = function () {
+            frameLoaded[index] = true;
+            loadedCount++;
+            updateLoader();
+            if (index === currentFrame || index === 0) requestRender();
+          };
+          img.onerror = function () {
+            // Count errors as "done" so the loader can't hang forever;
+            // nearestLoadedFrame() papers over the hole at render time.
+            loadedCount++;
+            updateLoader();
+          };
+          img.src = framePathFor(index);
+          frames[index] = img;
+        })(i);
+      }
+    }
+
+    function updateLoader() {
+      var pct = Math.round((loadedCount / FRAME_COUNT) * 100);
+      loaderFill.style.transform = "scaleX(" + loadedCount / FRAME_COUNT + ")";
+      loaderLabel.textContent = "Loading " + pct + "%";
+      if (loadedCount >= FRAME_COUNT) {
+        loader.classList.add("done");
+        requestRender();
+      }
+    }
+
+    /* Graceful fallback while frames are still arriving: draw the
+       closest decoded frame; self-heals as gaps fill in. */
+    function nearestLoadedFrame(target) {
+      if (frameLoaded[target]) return target;
+      for (var d = 1; d < FRAME_COUNT; d++) {
+        if (target - d >= 0 && frameLoaded[target - d]) return target - d;
+        if (target + d < FRAME_COUNT && frameLoaded[target + d]) return target + d;
+      }
+      return -1;
+    }
+
+    /* ============================================================
+       CANVAS SIZING + DRAW (DPR-aware, cover-fit centered)
+       ============================================================ */
+    function resizeCanvas() {
+      var rect = canvas.parentElement.getBoundingClientRect();
+      var dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      drawFrame(currentFrame);
+    }
+
+    function drawFrame(index) {
+      var usable = nearestLoadedFrame(index);
+      if (usable === -1) return;
+      var img = frames[usable];
+      var dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);
+      var cw = canvas.width / dpr;
+      var ch = canvas.height / dpr;
+      var scale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
+      var dw = img.naturalWidth * scale;
+      var dh = img.naturalHeight * scale;
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+    }
+
+    /* Collapse rapid scrub updates into one paint per refresh. */
+    function requestRender() {
+      if (renderQueued) return;
+      renderQueued = true;
+      requestAnimationFrame(function () {
+        renderQueued = false;
+        drawFrame(currentFrame);
+      });
+    }
+
+    /* Scrub-driven caption reveals: each caption rises in over its
+       fadeIn window and drops out over its fadeOut window. Both edges
+       smoothstepped, fully reversible when scrolling back up. */
+    function smoothstep(a, b, x) {
+      var t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    }
+
+    function updateCaptions(progress) {
+      CAPTIONS.forEach(function (c) {
+        var vis = smoothstep(c.fadeIn[0], c.fadeIn[1], progress)
+                * (1 - smoothstep(c.fadeOut[0], c.fadeOut[1], progress));
+        c.node.style.opacity = vis;
+        c.inner.style.transform = "translateY(" + 24 * (1 - vis) + "px)";
+      });
+    }
+
+    /* ============================================================
+       SCROLL → FRAME MAPPING (GSAP + ScrollTrigger)
+       One timeline: the clips tween their frames back to back
+       (1 unit per frame) with no holds — playback never freezes.
+       Captions overlay the moving video: each one is pinned up
+       across the middle of its own clip via its fade windows.
+       ============================================================ */
+    function initScroll() {
+      gsap.registerPlugin(ScrollTrigger);
+
+      var seq = { frame: 0 };
+
+      var totalUnits = 0;
+      SEGMENTS.forEach(function (s) { totalUnits += s.count; });
+
+      var tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: "#sequence",
+          start: "top top",
+          end: "+=" + Math.round(totalUnits * CONFIG.pxPerUnit),
+          pin: true,
+          scrub: CONFIG.scrub,
+          anticipatePin: 1,
+          invalidateOnRefresh: true
+        },
+        onUpdate: function () {
+          updateCaptions(tl.progress());
+          var f = Math.round(seq.frame);
+          if (f !== currentFrame) {
+            currentFrame = f;
+            requestRender();
+          }
+        }
+      });
+
+      var cursor = 0;
+      var cumFrames = 0;
+      SEGMENTS.forEach(function (s, idx) {
+        cumFrames += s.count;
+        tl.to(seq, { frame: cumFrames - 1, duration: s.count, ease: "none", snap: "frame" }, cursor);
+
+        var cap = CAPTIONS[idx];
+        if (cap) {
+          cap.fadeIn = [
+            (cursor + CONFIG.capIn[0] * s.count) / totalUnits,
+            (cursor + CONFIG.capIn[1] * s.count) / totalUnits
+          ];
+          cap.fadeOut = (idx === SEGMENTS.length - 1)
+            ? [9, 9] // final caption holds to the end of the pin
+            : [
+                (cursor + CONFIG.capOut[0] * s.count) / totalUnits,
+                (cursor + CONFIG.capOut[1] * s.count) / totalUnits
+              ];
+        }
+        cursor += s.count;
+      });
+    }
+
+    /* ============================================================
+       BOOT
+       ============================================================ */
+    resizeCanvas();
+    preload();
+
+    if (window.gsap && window.ScrollTrigger) {
+      initScroll();
+    } else {
+      // CDN blocked/offline: show first frame statically.
+      loader.classList.add("done");
+    }
+
+    var resizeTimer;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        resizeCanvas();
+        if (window.ScrollTrigger) ScrollTrigger.refresh();
+      }, 150);
+    });
+    window.addEventListener("orientationchange", function () {
+      setTimeout(resizeCanvas, 300);
+    });
+  })();
+  </script>
+</body>
+</html>
